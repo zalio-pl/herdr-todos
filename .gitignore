@@ -6,3 +6,5 @@ gpui-kit.d.ts
 .cache/
 *.log
 .DS_Store
+# Machine-specific settings of examples/pi-bridge-model.mjs
+examples/*.local.json

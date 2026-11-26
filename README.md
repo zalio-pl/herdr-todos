@@ -97,6 +97,23 @@ An example file:
 
 **When the small model gets it wrong.** A small model is fast and cheap, and sometimes overstates: a task marked done that is not, a "now" line that promises more than the conversation says. Try a larger one for a day, `node todos.mjs config set model anthropic/claude-sonnet-5-5`, and compare; it costs more per update and is slower. The model in use is always in the footer, and a failed call names the model and this command.
 
+### Models through claude-bridge
+
+If Pi reaches Claude through the [pi-claude-bridge](https://www.npmjs.com/package/pi-claude-bridge) extension (models named `claude-bridge/*`) rather than an API key, the default call cannot see those models: it runs `pi -p -ne`, and `-ne` turns extensions off. `examples/pi-bridge-model.mjs` is a `modelCmd` that makes the same call with only the bridge loaded:
+
+```json
+{
+  "model": "claude-bridge/claude-haiku-5-5",
+  "modelCmd": ["node", "<path-to>/herdr-todos/examples/pi-bridge-model.mjs"]
+}
+```
+
+Herdr starts the widget without your shell's environment, so two things are fixed there. A missing `USER` (the bridge then says "Not logged in") is filled in from the system. A `PATH` that finds a Node Pi does not run on is yours to point elsewhere: copy `examples/pi-bridge-model.local.example.json` to `examples/pi-bridge-model.local.json` (git-ignored) and set `nodeBin` to the folder of a Node that works, or set `PI_BRIDGE_NODE_BIN`. The script holds no credentials; the login stays where the bridge keeps it. Try it by hand:
+
+```sh
+echo '{"model":"claude-bridge/claude-haiku-5-5","system":"Be brief.","input":"Reply with: ok","thinking":"off"}' | node examples/pi-bridge-model.mjs
+```
+
 ## More than the video shows
 
 - **Click a card** to go to that conversation. If you are zoomed in, the clicked pane is zoomed instead, so the view changes.
