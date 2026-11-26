@@ -112,6 +112,32 @@ function splitBeside(terminal, argv) {
   return null;
 }
 
+// The kit cannot measure text, so wrapped lines are counted: greedy word wrap with a generous
+// average glyph width (counting a line too many leaves a little space; too few would clip).
+const GLYPH = 0.53; // Geist measures about 0.49 em per character in Polish and English text
+function lineCount(text, width, size) {
+  const per = Math.max(8, Math.floor(width / (size * GLYPH)));
+  let lines = 1;
+  let used = 0;
+  for (const word of String(text ?? "").split(/\s+/).filter(Boolean)) {
+    let w = word.length;
+    if (used > 0 && used + 1 + w <= per) {
+      used += 1 + w;
+      continue;
+    }
+    if (used > 0) lines++;
+    while (w > per) {
+      lines++;
+      w -= per;
+    }
+    used = w;
+  }
+  return lines;
+}
+// Line heights and text widths of a card, from the list's width (card margins, padding, icons).
+const LH = { now: 17, task: 18, error: 15 };
+const textWidths = (listW) => ({ now: listW - 58, task: listW - 89, error: listW - 58 });
+
 const statusClass = (s) => (s === "working" ? "working" : s === "blocked" || s === "error" ? "blocked" : "rest");
 
 // The list shows items from `top` and clips the rest; ↑/↓ and the wheel move `top` only as
@@ -129,8 +155,12 @@ function windowedList(view, t, id, heights, render, chromePx, mod) {
     .min_h(60)
     .overflow_hidden()
     .relative()
-    .on_mouse_move((e) => {
+    .on_mouse_move((e, cx) => {
       if (e.bounds?.height) view.viewH = e.bounds.height;
+      if (e.bounds?.width && Math.abs(e.bounds.width - (view.viewW ?? 0)) > 1) {
+        view.viewW = e.bounds.width;
+        cx.notify();
+      }
     })
     .on_scroll_wheel((e, cx) => {
       if (e.bounds?.height) view.viewH = e.bounds.height;
@@ -197,6 +227,8 @@ export default class Todos extends View {
     this.handle = cx.focus_handle();
     this.top = 0;
     this.viewH = null;
+    this.viewW = null;
+    this.widths = textWidths(304);
     this.lastHeights = null; // the list's row heights and height, from the last render
     this.lastVp = 0;
     this.sel = null; // the selected card's terminal address
@@ -579,8 +611,9 @@ export default class Todos extends View {
       .text_size(12.5)
       .text_color(s === "done" || low ? t.dim : s === "todo" ? t.muted : s === "blocked" ? t.blocked : t.foreground)
       .when(level === "high" && s !== "done", (el) => el.font_medium().text_color(s === "blocked" ? t.blocked : t.foreground))
-      .truncate()
+      .line_height(`${LH.task}px`)
       .child(task.text);
+    const lines = lineCount(task.text, this.widths.task, 12.5);
     // The flag: shown when set, or on hover. Click: normal -> high -> low -> normal.
     const showFlag = s !== "done" && task.key && (level !== "normal" || this.hoverTask === rowId);
     const flag = div()
@@ -604,7 +637,7 @@ export default class Todos extends View {
       );
     return h_flex()
       .id(rowId)
-      .h(18)
+      .h(LH.task * lines)
       .gap(8)
       .items_start()
       .tooltip(`${task.text}\n\nRight-click: explain, go to session, priority`)
@@ -623,7 +656,8 @@ export default class Todos extends View {
   }
 
   // What a card shows, and so its exact height: the list is virtual and places cards by it.
-  // Every line is one line (truncated; the full text is in its tooltip).
+  // The title and tab are one line (truncated; full text in the tooltip); the now line, the tasks
+  // and the error wrap, and the height counts their lines (`lineCount`).
   shape(a, s, busy, showTab) {
     const sorted = [...(s?.tasks ?? [])].sort(
       (x, y) => (TASK_ORDER[x.status] ?? 9) - (TASK_ORDER[y.status] ?? 9) || (LEVEL[x.priority] ?? 1) - (LEVEL[y.priority] ?? 1),
@@ -635,7 +669,16 @@ export default class Todos extends View {
     // Only when it tells sessions apart: a named tab, or sessions spread over several tabs.
     const tabLabel = !a ? null : a.tab_name && !/^\d+$/.test(a.tab_name) ? a.tab_name : showTab ? `Tab ${a.tab_index}` : null;
     const placeholder = !s ? (busy ? "Reading this session…" : "Not read yet") : !tasks.length && !s.now ? (s.error ? null : "No tasks yet") : null;
-    const parts = [tabLabel ? 14 : 0, s?.now ? 24 : 0, tasks.length ? 6 + tasks.length * 18 + (tasks.length - 1) * 5 + 7 : 0, hidden > 0 ? 22 : 0, placeholder ? 24 : 0, s?.error ? 22 : 0];
+    const w = this.widths;
+    const taskPx = tasks.reduce((n, x) => n + LH.task * lineCount(x.text, w.task, 12.5), 0);
+    const parts = [
+      tabLabel ? 14 : 0,
+      s?.now ? 7 + LH.now * lineCount(s.now, w.now, 12) : 0,
+      tasks.length ? 6 + taskPx + (tasks.length - 1) * 5 + 7 : 0,
+      hidden > 0 ? 22 : 0,
+      placeholder ? 24 : 0,
+      s?.error ? 7 + LH.error * lineCount(`Not updated: ${s.error}`, w.error, 11) : 0,
+    ];
     return { tasks, hidden, tabLabel, placeholder, height: 22 + 20 + parts.reduce((n, x) => n + x, 0) };
   }
 
@@ -708,7 +751,7 @@ export default class Todos extends View {
           .when(Boolean(s?.summarized_at), (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(ago(s.summarized_at)))),
       )
       .when(Boolean(tabLabel), (el) => el.child(div().mt(-4).pl(16).truncate().text_size(11).text_color(t.dim).child(tabLabel)))
-      .when(Boolean(s?.now), (el) => el.child(div().pl(16).h(17).truncate().text_size(12).text_color(t.muted).child(s.now)))
+      .when(Boolean(s?.now), (el) => el.child(div().pl(16).flex_none().line_height(`${LH.now}px`).text_size(12).text_color(t.muted).child(s.now)))
       .when(tasks.length > 0, (el) => el.child(v_flex().pl(2).pt(2).gap(5).children(tasks.map((task, i) => this.taskRow(t, task, i, key, addr, (task) => this.taskMenu(a, s, task))))))
       .when(hidden > 0, (el) => el.child(div().pl(23).text_size(11).text_color(t.dim).child(`+${hidden} more`)))
       .when(Boolean(placeholder), (el) =>
@@ -723,7 +766,7 @@ export default class Todos extends View {
             .child(placeholder),
         ),
       )
-      .when(Boolean(s?.error), (el) => el.child(div().pl(16).text_size(11).text_color(t.dim).child(`Not updated: ${s.error}`)));
+      .when(Boolean(s?.error), (el) => el.child(div().pl(16).flex_none().line_height(`${LH.error}px`).text_size(11).text_color(t.dim).child(`Not updated: ${s.error}`)));
   }
 
   chip(t, color, n, label) {
@@ -845,6 +888,7 @@ export default class Todos extends View {
       .when(Boolean(parts.drop), (el) => el.child(parts.drop));
     if (this.collapsed) return shell;
     const showTab = new Set(rows.map((r) => r.a.tab)).size > 1;
+    this.widths = textWidths(this.viewW ?? (this.frame.floating ? 360 : 304));
     const heights = rows.map(({ a, s }) => this.shape(a, s, busy, showTab).height + 8);
     return shell
       .when(chips.length > 0 && !empty, (el) => el.child(h_flex().px(12).pb(8).pt(2).gap(6).flex_wrap().flex_none().children(chips)))
