@@ -108,7 +108,13 @@ If Pi reaches Claude through the [pi-claude-bridge](https://www.npmjs.com/packag
 }
 ```
 
-Herdr starts the widget without your shell's environment, so two things are fixed there. A missing `USER` (the bridge then says "Not logged in") is filled in from the system. A `PATH` that finds a Node Pi does not run on is yours to point elsewhere: copy `examples/pi-bridge-model.local.example.json` to `examples/pi-bridge-model.local.json` (git-ignored) and set `nodeBin` to the folder of a Node that works, or set `PI_BRIDGE_NODE_BIN`. The script holds no credentials; the login stays where the bridge keeps it. Try it by hand:
+Herdr starts the widget without your shell's environment, so two things are fixed there. A missing `USER` (the bridge then says "Not logged in") is filled in from the system. A `PATH` that finds a Node Pi does not run on is yours to point elsewhere: copy `examples/pi-bridge-model.local.example.json` to `examples/pi-bridge-model.local.json` (git-ignored) and set `nodeBin` to the folder of a Node that works, or set `PI_BRIDGE_NODE_BIN`. The same file takes `bridge`, the folder of pi-claude-bridge, when it is not installed at the default `~/.pi/agent/npm/node_modules/pi-claude-bridge`:
+
+```json
+{ "nodeBin": "/opt/homebrew/opt/node@24/bin", "bridge": "/path/to/node_modules/pi-claude-bridge" }
+```
+
+The script holds no credentials; the login stays where the bridge keeps it. Try it by hand:
 
 ```sh
 echo '{"model":"claude-bridge/claude-haiku-5-5","system":"Be brief.","input":"Reply with: ok","thinking":"off"}' | node examples/pi-bridge-model.mjs

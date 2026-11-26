@@ -10,6 +10,7 @@
 // - PATH finds a Node that pi does not run on. Name a folder with one that works in
 //   `nodeBin` of pi-bridge-model.local.json beside this file (git-ignored), or PI_BRIDGE_NODE_BIN.
 // - USER is missing, and the bridge then cannot find its login. It is filled in from the system.
+// The same local file takes `bridge`: the pi-claude-bridge folder, if not at the default path.
 // This script holds no credentials: the login stays where the bridge keeps it.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
