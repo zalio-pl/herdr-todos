@@ -3,8 +3,10 @@
 // (models named claude-bridge/*) instead of an API key. See README, "Models through claude-bridge".
 //
 // It makes the same isolated `pi -p` call the widget makes (no session, tools, skills, prompts or
-// context files), but loads the bridge extension: the widget's `-ne` would hide claude-bridge/*.
+// context files), but loads the bridge extension and the built-in llama.cpp provider: the
+// widget's `-ne` would hide claude-bridge/* and local llama.cpp models.
 // stdin: {"model","system","input","thinking"} as JSON; stdout: the model's reply.
+// stdin {"list": true}: stdout is the `pi --list-models` table (for the widget's model picker).
 //
 // Herdr starts the widget without your login shell's environment. Two things can go wrong there:
 // - PATH finds a Node that pi does not run on. Name a folder with one that works in
@@ -27,7 +29,7 @@ const NODE_BIN = process.env.PI_BRIDGE_NODE_BIN || local.nodeBin || null;
 
 let raw = "";
 for await (const chunk of process.stdin) raw += chunk;
-const { model, system, input, thinking } = JSON.parse(raw);
+const { model, system, input, thinking, list } = JSON.parse(raw);
 
 const env = {
   ...process.env,
@@ -37,10 +39,15 @@ const env = {
   PI_NO_TITLE: "1",
 };
 
+// Only the bridge and Pi's built-in llama.cpp provider (local models) are loaded.
+const EXTENSIONS = ["-ne", "-e", BRIDGE, "-e", "builtin:llama.cpp"];
+// {"list": true}: the models Pi can call this way, as `pi --list-models` prints them.
 const child = spawn(
   "pi",
-  ["-p", "--no-session", "-ne", "-e", BRIDGE, "-nt", "-ns", "-np", "-nc", "--no-mcp", "--no-themes",
-   "--thinking", thinking ?? "off", "--model", model, "--system-prompt", system],
+  list
+    ? ["--list-models", ...EXTENSIONS, "--no-mcp", "--no-themes"]
+    : ["-p", "--no-session", ...EXTENSIONS, "-nt", "-ns", "-np", "-nc", "--no-mcp", "--no-themes",
+       "--thinking", thinking ?? "off", "--model", model, "--system-prompt", system],
   { stdio: ["pipe", "inherit", "inherit"], env },
 );
 child.on("error", (e) => {

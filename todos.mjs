@@ -689,6 +689,36 @@ const spaceFile = (space) => path.join(stateDir, "spaces", `${space.replace(/[^A
 const prefsFile = (space) => path.join(stateDir, "prefs", `${space.replace(/[^A-Za-z0-9_-]/g, "_")}.json`);
 const LEVELS = ["high", "normal", "low"];
 
+// The models Pi knows, for the sidebar's model picker: { current, models: ["provider/id", ...] }.
+// With modelCmd set, it is asked first with {"list": true} (it knows how to start Pi here, e.g.
+// which Node); a reply that is not a `pi --list-models` table falls back to `pi --list-models`.
+function parseModelTable(text) {
+  const lines = String(text ?? "").split("\n").map((l) => l.trim());
+  const at = lines.findIndex((l) => /^provider\s+model\b/.test(l));
+  if (at < 0) return [];
+  return lines
+    .slice(at + 1)
+    .map((l) => l.split(/\s+/))
+    .filter(([provider, id]) => provider && id)
+    .map(([provider, id]) => `${provider}/${id}`);
+}
+async function listModels() {
+  const settings = settingsFor(null);
+  const { modelCmd, model: current } = settings.values;
+  let why = null;
+  if (modelCmd) {
+    const r = await run(modelCmd[0], modelCmd.slice(1), { input: JSON.stringify({ list: true }), timeout: 30_000 });
+    const models = r.code === 0 ? parseModelTable(r.stdout) : [];
+    if (models.length) return { current, models };
+    why = `${modelCmd[0]} (modelCmd) gave no model list`;
+  }
+  const r = await run("pi", ["--list-models"], { timeout: 30_000 });
+  const models = r.code === 0 ? parseModelTable(r.stdout) : [];
+  if (models.length) return { current, models };
+  const last = (r.stderr || r.stdout).trim().split("\n").pop()?.slice(0, 160);
+  fail("FAILED", `${why ? `${why}; ` : ""}pi --list-models failed: ${last || `exit ${r.code}`}`);
+}
+
 // The person's choices for a space: session order (terminal addresses, first = most important)
 // and task priorities keyed "<terminal>|<task key>".
 async function readPrefs(space) {
@@ -898,6 +928,7 @@ const DESCRIBE = {
     priority: "priority --space <id> --terminal <t> --task <key> --level high|normal|low: rank one task (keys are in each task's `key`)",
     explain: "explain --space <id> --terminal <t> [--task <key>]: the command that opens a Pi beside the session on a fork of its conversation (`pi --fork`), asked to explain the task or session and given the sidebar commands to act; open it with `herdr-app do pane.split '{\"pane\":...,\"direction\":\"right\",\"argv\":[...]}'`. Prints {kind, name, folder, fork, terminal, prompt, argv}",
     config: "config: the settings in force and where each value came from (default, user file, project file, environment). config set <key> <value> [--project [folder]]: write one after checking it (user file, or <project>/.herdr/todos.json). config unset <key> [--project]. config path: the two files",
+    models: "models: the models Pi can call ({current, models: [provider/id...]}), from `pi --list-models`",
     describe: "this description",
   },
   output: {
@@ -918,6 +949,8 @@ try {
     process.stdout.write(JSON.stringify(DESCRIBE, null, 1) + "\n");
   } else if (cmd === "config") {
     await configCommand();
+  } else if (cmd === "models") {
+    print(await listModels());
   } else if (cmd === "explain") {
     if (typeof args.space !== "string" || typeof args.terminal !== "string") fail("INVALID", "--space and --terminal are required");
     print(await explainTask(args.space, args.terminal, typeof args.task === "string" ? args.task : null));

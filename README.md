@@ -48,7 +48,7 @@ Do this in a Herdr space with Pi running in a pane. The sample project of the le
 
 - Todos on the right edge of the window.
 - One card per Pi conversation of this space, with a title, a "now" line and tasks. No card for other harnesses or for sub-agents.
-- In the footer: when it was last updated, and the model that wrote the lists.
+- In the footer: when it was last updated, and the model that wrote the lists. Click the model to choose another from the models Pi lists (`pi --list-models`); it is saved in your settings file and the lists are written again.
 
 ### Keys
 
@@ -74,7 +74,7 @@ One settings file, `~/.config/herdr-todos/config.json`, because a Herdr opened f
 | `thinking` | `off` | Thinking level passed to the model: `off`, `low`, `medium`, `high`. | `HERDR_TODOS_THINKING` |
 | `refreshSeconds` | `120` | A conversation that is still working gets its list rewritten at most this often (15 to 3600). | `HERDR_TODOS_REFRESH_SECONDS` |
 | `maxTasksShown` | `8` | The most tasks kept per conversation from the model's list (1 to 20). | `HERDR_TODOS_MAX_TASKS_SHOWN` |
-| `modelCmd` | none | A command run instead of Pi for every model call, as a list: `["node", "my-model.mjs"]`. It gets `{"model","system","input","thinking"}` as JSON on stdin and prints the reply. For another provider, or a recorded model in tests. | `HERDR_TODOS_MODEL_CMD` |
+| `modelCmd` | none | A command run instead of Pi for every model call, as a list: `["node", "my-model.mjs"]`. It gets `{"model","system","input","thinking"}` as JSON on stdin and prints the reply. Optionally, given `{"list": true}`, it prints the `pi --list-models` table for the model picker (otherwise `pi --list-models` is run directly). For another provider, or a recorded model in tests. | `HERDR_TODOS_MODEL_CMD` |
 
 See and change them with the helper (installed at `~/.config/herdr-app/mods/todos/todos.mjs`):
 
@@ -84,6 +84,7 @@ node todos.mjs config set model anthropic/claude-sonnet-5-5
 node todos.mjs config set refreshSeconds 60 --project   # writes <this git repository>/.herdr/todos.json
 node todos.mjs config unset model
 node todos.mjs config path                              # the two files
+node todos.mjs models                                   # the models Pi can call, and the one in use
 node todos.mjs describe                                 # every key with type, default and meaning (for agents)
 ```
 
@@ -99,7 +100,7 @@ An example file:
 
 ### Models through claude-bridge
 
-If Pi reaches Claude through the [pi-claude-bridge](https://www.npmjs.com/package/pi-claude-bridge) extension (models named `claude-bridge/*`) rather than an API key, the default call cannot see those models: it runs `pi -p -ne`, and `-ne` turns extensions off. `examples/pi-bridge-model.mjs` is a `modelCmd` that makes the same call with only the bridge loaded:
+If Pi reaches Claude through the [pi-claude-bridge](https://www.npmjs.com/package/pi-claude-bridge) extension (models named `claude-bridge/*`) rather than an API key, the default call cannot see those models: it runs `pi -p -ne`, and `-ne` turns extensions off. `examples/pi-bridge-model.mjs` is a `modelCmd` that makes the same call with only the bridge and Pi's built-in llama.cpp provider loaded (so local `llama.cpp/*` models work too):
 
 ```json
 {

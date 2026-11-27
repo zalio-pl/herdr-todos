@@ -91,9 +91,9 @@ function showPane(pane) {
 // The right-click menu (mods/todos-menu): items are { label, icon, action, args, sep? }; the
 // choice comes back as the "menu" command with shared "todos.menu" = { action, args, at }.
 const CHROME = (n) => `mods/workspace-chrome/${n}.svg`;
-function openMenu(owner, title, items) {
+function openMenu(owner, title, items, width = 250) {
   const seps = items.filter((it, i) => i > 0 && it.sep).length;
-  openOverlay({ mod: "todos-menu", kind: "popup", width: 250, height: 12 + items.length * 31 + seps * 9 + (title ? 24 : 0), props: { owner, title, items } });
+  openOverlay({ mod: "todos-menu", kind: "popup", width, height: 12 + items.length * 31 + seps * 9 + (title ? 24 : 0), props: { owner, title, items } });
 }
 
 // Opens argv in a new pane right of the terminal's pane (else the focused one). A zoomed tab
@@ -479,7 +479,74 @@ export default class Todos extends View {
         this.save(sp, ["order", "--terminals", order.map((x) => bare(x, where(sp).machine)).join(",")], cx);
       }
     } else if (m.action === "refresh" && sp) this.refresh(sp, cx, true);
+    else if (m.action === "model" && a.model) this.setModel(a.space ?? sp, a.model, cx);
     cx.notify();
+  }
+
+  // ---------- the model that writes the lists ----------
+
+  // Asks the helper (on the space's machine) which models Pi has, then opens them as a menu.
+  modelMenu(cx) {
+    const sp = this.shownSpace;
+    if (!sp) return;
+    const { machine } = where(sp);
+    this.notice = "Reading the models…";
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const r = await callHelper(machine, ["models"], 60_000);
+        if (r.code !== 0) this.errors[sp] = `Couldn't list the models: ${helperError(r, machine)}`;
+        else {
+          const { current, models } = JSON.parse(r.stdout);
+          if (!models.length) this.errors[sp] = "Pi lists no models (pi --list-models)";
+          else {
+            const providers = new Set(models.map((m) => m.split("/")[0]));
+            const items = models.map((m, i) => {
+              const [provider, ...rest] = m.split("/");
+              const id = rest.join("/");
+              return {
+                label: providers.size > 1 ? `${id}  ·  ${provider}` : id,
+                icon: m === current ? ICON("done") : null,
+                action: "model",
+                args: { space: sp, model: m },
+                sep: i > 0 && models[i - 1].split("/")[0] !== provider,
+              };
+            });
+            openMenu(NAME, `Task lists by ${current}`, items, providers.size > 1 ? 300 : 250);
+          }
+        }
+      } catch (e) {
+        this.errors[sp] = `Couldn't list the models: ${String(e?.message ?? e)}`;
+      }
+      this.notice = null;
+      cx.notify();
+    });
+  }
+
+  // Saves the model in the user settings file (of the space's machine) and reads the space again:
+  // a list written by another model is written anew.
+  setModel(space, model, cx) {
+    if (!space || !model) return;
+    const { machine } = where(space);
+    if (this.cache[space]?.model === model) return;
+    this.notice = `Switching to ${model.split("/").pop()}…`;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const r = await callHelper(machine, ["config", "set", "model", model], 60_000);
+        if (r.code !== 0) this.errors[space] = `Couldn't change the model: ${helperError(r, machine)}`;
+        else {
+          delete this.errors[space];
+          for (const [id, doc] of Object.entries(this.cache)) if (doc && where(id).machine === machine) this.cache[id] = { ...doc, model };
+          this.notice = null;
+          this.refresh(space, cx, false);
+        }
+      } catch (e) {
+        this.errors[space] = `Couldn't change the model: ${String(e?.message ?? e)}`;
+      }
+      this.notice = null;
+      cx.notify();
+    });
   }
 
   // A new Pi beside the session, on a fork of its conversation, asked to explain (see `explain`
@@ -932,7 +999,22 @@ export default class Todos extends View {
               .text_size(11)
               .text_color(t.dim)
               .child(div().flex_1().truncate().child(footerText))
-              .child(div().id("todos-model").flex_none().tooltip(`Task lists by ${doc?.model ?? "the model in the settings"}. Change it: node todos.mjs config set model <provider/id>`).child(doc?.model ? String(doc.model).split("/").pop().replace(/^claude-/, "") : "")),
+              .child(
+                div()
+                  .id("todos-model")
+                  .flex_none()
+                  .px(4)
+                  .rounded(4)
+                  .cursor_pointer()
+                  .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                  .tooltip(`Task lists by ${doc?.model ?? "the model in the settings"}. Click to choose another`)
+                  .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+                  .on_click((_e, cx) => {
+                    cx.stop_propagation();
+                    this.modelMenu(cx);
+                  })
+                  .child(doc?.model ? String(doc.model).split("/").pop().replace(/^claude-/, "") : "model"),
+              ),
           ),
       );
   }
